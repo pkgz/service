@@ -1,4 +1,4 @@
-module service
+module github.com/pkgz/service
 
 go 1.13
 
