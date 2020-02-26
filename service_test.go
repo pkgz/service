@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"github.com/pkgz/logg"
 	"github.com/stretchr/testify/require"
 	"log"
@@ -156,4 +157,13 @@ func TestInit(t *testing.T) {
 		_, _, err := Init(&args, "")
 		require.Error(t, err)
 	})
+}
+
+func TestNewMongo(t *testing.T) {
+	ctx := context.Background()
+	host := ""
+
+	client, err := NewMongo(ctx, host)
+	require.Error(t, err)
+	require.Nil(t, client)
 }

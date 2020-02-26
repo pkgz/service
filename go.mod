@@ -8,4 +8,5 @@ require (
 	github.com/pkgz/OpenTracing v0.0.3
 	github.com/pkgz/logg v0.3.2
 	github.com/stretchr/testify v1.3.0
+	go.mongodb.org/mongo-driver v1.3.0
 )
