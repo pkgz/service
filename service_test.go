@@ -93,14 +93,14 @@ func TestContextWithCancel(t *testing.T) {
 func TestInit(t *testing.T) {
 	t.Run("wrong args", func(t *testing.T) {
 		var args interface{}
-		_, _, err := Init(args, "")
+		_, _, err := Init(args)
 		require.Error(t, err)
 	})
 
 	t.Run("empty args", func(t *testing.T) {
 		os.Args = []string{""}
 		var args struct{}
-		_, _, err := Init(&args, "")
+		_, _, err := Init(&args)
 		log.Print(err)
 		require.Error(t, err)
 	})
@@ -110,7 +110,7 @@ func TestInit(t *testing.T) {
 		var args struct {
 			Test bool `long:"test" env:"TEST" description:"test env variable"`
 		}
-		_, _, err := Init(&args, "")
+		_, _, err := Init(&args)
 		require.Error(t, err)
 	})
 
@@ -120,7 +120,7 @@ func TestInit(t *testing.T) {
 			ARGS
 			Test bool `long:"test" env:"TEST" description:"test env variable"`
 		}
-		tracer, closer, err := Init(&args, "")
+		tracer, closer, err := Init(&args)
 		require.NoError(t, err)
 		require.NotNil(t, tracer)
 		require.NotNil(t, closer)
@@ -137,7 +137,7 @@ func TestInit(t *testing.T) {
 			ARGS
 			Test bool `long:"test" env:"TEST" description:"test env variable"`
 		}
-		tracer, closer, err := Init(&args, "")
+		tracer, closer, err := Init(&args)
 		require.NoError(t, err)
 		require.NotNil(t, tracer)
 		require.NotNil(t, closer)
@@ -154,7 +154,7 @@ func TestInit(t *testing.T) {
 			ARGS
 			Test bool `long:"test" env:"TEST" description:"test env variable"`
 		}
-		_, _, err := Init(&args, "")
+		_, _, err := Init(&args)
 		require.Error(t, err)
 	})
 }
