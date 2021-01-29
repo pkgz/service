@@ -14,11 +14,14 @@ type ARGS struct {
 	Debug bool `long:"debug" env:"DEBUG" description:"debug mode"`
 }
 
+var (
+	ErrMissingArgs = errors.New("helper.ARGS not find in args")
+)
+
 // Init - allows easily initialize app. Will parse environment arguments, and will initialize application context with cancel.
 func Init(args interface{}) (context.Context, context.CancelFunc, error) {
-	err := ParseEnv(args)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "parse env error")
+	if err := ParseEnv(args); err != nil {
+		return nil, nil, err
 	}
 
 	ctx, cancel := ContextWithCancel()
@@ -27,7 +30,7 @@ func Init(args interface{}) (context.Context, context.CancelFunc, error) {
 	value := s.Elem()
 	argsValue := value.FieldByName("ARGS")
 	if !argsValue.IsValid() {
-		return nil, nil, errors.New("helper.ARGS not find in args")
+		return nil, nil, ErrMissingArgs
 	}
 
 	var debug = argsValue.FieldByName("Debug").Bool()
