@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"github.com/pkg/errors"
+	"errors"
 	"github.com/pkgz/logg"
 	"os"
 	"reflect"
