@@ -8,8 +8,7 @@ import (
 	"syscall"
 )
 
-// ContextWithCancel - creating context with cancel. Also start goroutine which waiting for SIGTERM signal and closing
-// the context.
+// ContextWithCancel - creating context with cancel. Also start goroutine which waiting for SIGTERM signal and closing the context.
 func ContextWithCancel() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 

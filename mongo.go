@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"time"
 )
 
@@ -14,21 +14,15 @@ func NewMongo(ctx context.Context, host string) (*mongo.Client, error) {
 		host = "mongodb://localhost:27017"
 	}
 
-	client, err := mongo.NewClient(options.Client().ApplyURI(host))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(host))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("connect: %w", err)
 	}
 
-	ctx_, _ := context.WithTimeout(ctx, 5*time.Second)
-	err = client.Connect(ctx_)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx_, _ = context.WithTimeout(ctx, 3*time.Second)
-	err = client.Ping(ctx_, readpref.Primary())
-	if err != nil {
-		return nil, err
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx, nil); err != nil {
+		return nil, fmt.Errorf("ping: %w", err)
 	}
 
 	return client, nil
