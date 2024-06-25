@@ -2,13 +2,11 @@ package service
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-jose/go-jose/v4"
 	"io"
 	"net/http"
 	"net/url"
@@ -32,30 +30,6 @@ type jwtToken struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpireIn     int    `json:"expires_in"`
-}
-
-type JSONWebKey struct {
-	Key       interface{}
-	KeyID     string
-	Algorithm string
-	Use       string
-
-	Certificates                []*x509.Certificate
-	CertificatesURL             *url.URL
-	CertificateThumbprintSHA1   []byte
-	CertificateThumbprintSHA256 []byte
-}
-type JSONWebKeySet struct {
-	Keys []JSONWebKey `json:"keys"`
-}
-
-func (k *JSONWebKey) IsPublic() bool {
-	switch k.Key.(type) {
-	case *ecdsa.PublicKey, *rsa.PublicKey, ed25519.PublicKey:
-		return true
-	default:
-		return false
-	}
 }
 
 func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
@@ -193,7 +167,7 @@ func getPublicKey(ctx context.Context, host string) (*rsa.PublicKey, error) {
 		return nil, err
 	}
 
-	var jwks = JSONWebKeySet{}
+	var jwks = jose.JSONWebKeySet{}
 	if err := json.Unmarshal(body, &jwks); err != nil {
 		return nil, err
 	}
