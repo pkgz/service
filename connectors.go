@@ -2,14 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/domain"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // NewMongo - initialize mongo-driver client. Also pinging mongo.
@@ -18,7 +19,7 @@ func NewMongo(ctx context.Context, host string) (*mongo.Client, error) {
 		host = "mongodb://localhost:27017"
 	}
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(host))
+	client, err := mongo.Connect(options.Client().ApplyURI(host))
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
@@ -32,13 +33,14 @@ func NewMongo(ctx context.Context, host string) (*mongo.Client, error) {
 	return client, nil
 }
 
+// NewRedis - initialize a redis Ring across the given hosts. Also pinging redis.
 func NewRedis(ctx context.Context, host []string, password string) (*redis.Ring, error) {
 	addr := make(map[string]string)
 	for i, h := range host {
 		addr[fmt.Sprintf("server_%d", i+1)] = h
 	}
 	conn := redis.NewRing(&redis.RingOptions{
-		NewClient: func(name string, opt *redis.Options) *redis.Client {
+		NewClient: func(opt *redis.Options) *redis.Client {
 			opt.Password = password
 			return redis.NewClient(opt)
 		},
@@ -52,6 +54,7 @@ func NewRedis(ctx context.Context, host []string, password string) (*redis.Ring,
 	return conn, nil
 }
 
+// NewInflux - initialize an influxdb client. Also pinging influx and verifying it reports ready.
 func NewInflux(ctx context.Context, host, token string, opts *influxdb2.Options) (influxdb2.Client, error) {
 	client := influxdb2.NewClientWithOptions(host, token, opts)
 	if _, err := client.Ping(ctx); err != nil {
@@ -63,10 +66,10 @@ func NewInflux(ctx context.Context, host, token string, opts *influxdb2.Options)
 		return nil, fmt.Errorf("influx client: %w", err)
 	}
 	if ready.Status == nil {
-		return nil, fmt.Errorf("influx client ready status is nil: %w", err)
+		return nil, errors.New("influx client ready status is nil")
 	}
 	if *ready.Status != domain.ReadyStatusReady {
-		return nil, fmt.Errorf("influx client is not ready: %w", err)
+		return nil, fmt.Errorf("influx client is not ready: %s", *ready.Status)
 	}
 
 	return client, nil

@@ -148,8 +148,8 @@ func TestInit(t *testing.T) {
 		require.NotEmpty(t, buf)
 	})
 
-	t.Run("open tracing error", func(t *testing.T) {
-		os.Args = []string{"", "--open_tracing_host=test"}
+	t.Run("unknown flag", func(t *testing.T) {
+		os.Args = []string{"", "--does-not-exist=test"}
 		var args struct {
 			ARGS
 			Test bool `long:"test" env:"TEST" description:"test env variable"`

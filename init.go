@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"os"
 	"reflect"
 
@@ -11,34 +10,27 @@ import (
 
 // ARGS - default argument for application
 type ARGS struct {
-	Port  int  `long:"port" env:"PORT" default:"8080" description:"service rest port"`
+	Port    int      `long:"port" env:"PORT" default:"8080" description:"service rest port"`
+	Origins []string `long:"origins" env:"ORIGINS" env-delim:"," description:"service rest origins separated by ,"`
+	ENV     string   `long:"env" env:"ENV" default:"local" description:"service env"`
+
 	Debug bool `long:"debug" env:"DEBUG" description:"debug mode"`
 }
 
-var (
-	ErrMissingArgs = errors.New("helper.ARGS not find in args")
-)
-
 // Init - allows easily initialize app. Will parse environment arguments, and will initialize application context with cancel.
-func Init(args interface{}) (context.Context, context.CancelFunc, error) {
+func Init(args any) (context.Context, context.CancelFunc, error) {
 	if err := ParseEnv(args); err != nil {
 		return nil, nil, err
 	}
 
 	ctx, cancel := ContextWithCancel()
 
-	s := reflect.ValueOf(args)
-	value := s.Elem()
-	argsValue := value.FieldByName("ARGS")
-	if !argsValue.IsValid() {
-		return nil, nil, ErrMissingArgs
-	}
-
-	var debug = argsValue.FieldByName("Debug").Bool()
-
 	logg.NewGlobal(os.Stdout)
-	if debug {
-		logg.DebugMode()
+
+	if value := reflect.ValueOf(args).Elem(); value.Kind() == reflect.Struct {
+		if debug := value.FieldByName("Debug"); debug.IsValid() && debug.Kind() == reflect.Bool && debug.Bool() {
+			logg.DebugMode()
+		}
 	}
 
 	return ctx, cancel, nil
