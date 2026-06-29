@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -23,16 +24,27 @@ type Authenticator struct {
 	ClientID     string
 	ClientSecret string
 
-	tk        *jwtToken
+	tk        atomic.Pointer[jwtToken]
 	publicKey *rsa.PublicKey
 	client    *http.Client
 
-	sync.RWMutex
+	refreshMu sync.Mutex
 }
 type jwtToken struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpireIn     int    `json:"expires_in"`
+
+	expiresAt time.Time
+}
+
+const tokenExpiryLeeway = 10 * time.Second
+
+func (tk *jwtToken) expired() bool {
+	if tk.expiresAt.IsZero() {
+		return false
+	}
+	return time.Until(tk.expiresAt) <= tokenExpiryLeeway
 }
 
 var (
@@ -65,37 +77,25 @@ func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
 	}
 	t.publicKey = publicKey
 
-	t.tk, err = t.token(ctx)
+	tk, err := t.token(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token: %w", err)
 	}
+	t.tk.Store(tk)
 
 	ticker := time.NewTicker(t.refreshInterval())
-	defer ticker.Stop()
 
 	go func() {
+		defer ticker.Stop()
 	loop:
 		for {
 			select {
 			case <-ticker.C:
-				tk, err := t.token(ctx)
-				if err != nil {
-					t.Lock()
-					t.tk = nil
-					t.Unlock()
-
-					tk, err = t.token(ctx)
-					if err != nil {
-						log.Printf("[ERROR] failed to refresh token: %v", err)
-						ticker.Reset(time.Minute)
-						continue
-					}
+				if err := t.refresh(ctx, t.tk.Load()); err != nil {
+					log.Printf("[ERROR] failed to refresh token: %v", err)
+					ticker.Reset(time.Minute)
+					continue
 				}
-
-				t.Lock()
-				t.tk = tk
-				t.Unlock()
-
 				ticker.Reset(t.refreshInterval())
 			case <-ctx.Done():
 				break loop
@@ -106,30 +106,37 @@ func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
 	return t, nil
 }
 
-// refreshInterval returns how long to wait before refreshing the current token,
-// leaving a one-minute safety margin before expiry.
-func (t *Authenticator) refreshInterval() time.Duration {
-	t.RLock()
-	defer t.RUnlock()
-
-	if t.tk == nil || t.tk.ExpireIn <= 0 {
-		return time.Minute
-	}
-	if d := time.Duration(t.tk.ExpireIn)*time.Second - time.Minute; d > 0 {
-		return d
-	}
-
-	return time.Minute
-}
-
-// Token returns the current access token, or an empty string if none is available.
+// Token returns the current access token. If no token is held or the current one
+// has expired (e.g. the background refresher stalled or its context was
+// canceled), it refreshes on demand before returning, so freshness does not
+// depend on the background goroutine being alive. If that refresh fails it falls
+// back to the existing token rather than an empty string.
 func (t *Authenticator) Token() string {
-	t.RLock()
-	defer t.RUnlock()
-	if t.tk == nil {
+	tk := t.tk.Load()
+
+	if tk == nil || tk.expired() {
+		if err := t.refresh(context.Background(), tk); err != nil {
+			log.Printf("[ERROR] failed to refresh token: %v", err)
+		}
+		tk = t.tk.Load()
+	}
+
+	if tk == nil {
 		return ""
 	}
-	return t.tk.AccessToken
+
+	return tk.AccessToken
+}
+
+// Refresh forces a token refresh and reports whether a new token was obtained.
+// Call it when a downstream request made with Token() comes back 401
+// (Unauthorized), then retry the request with the refreshed Token().
+func (t *Authenticator) Refresh(ctx context.Context) bool {
+	if err := t.refresh(ctx, t.tk.Load()); err != nil {
+		log.Printf("[ERROR] failed to refresh token: %v", err)
+		return false
+	}
+	return true
 }
 
 // Verify validates the signature of the given JWT against the auth service's public key
@@ -140,25 +147,20 @@ func (t *Authenticator) Verify(token string) ([]byte, error) {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
-	t.RLock()
-	key := t.publicKey
-	t.RUnlock()
-
-	payload, err := jws.Verify(key)
+	// publicKey is immutable after construction, so no synchronisation is needed.
+	payload, err := jws.Verify(t.publicKey)
 	if err != nil {
 		return nil, fmt.Errorf("verify token: %w", err)
 	}
 	return payload, nil
 }
 
-func (t *Authenticator) token(ctx context.Context) (*jwtToken, error) {
+// token requests a token from the auth service. When cur carries a refresh token
+// the refresh_token grant is used; otherwise it performs a client_credentials grant.
+func (t *Authenticator) token(ctx context.Context, cur *jwtToken) (*jwtToken, error) {
 	data := url.Values{}
 
-	t.RLock()
-	cur := t.tk
-	t.RUnlock()
-
-	if cur == nil {
+	if cur == nil || cur.RefreshToken == "" {
 		data.Set("grant_type", "client_credentials")
 		data.Set("client_id", t.ClientID)
 		data.Set("client_secret", t.ClientSecret)
@@ -194,7 +196,57 @@ func (t *Authenticator) token(ctx context.Context) (*jwtToken, error) {
 		return nil, fmt.Errorf("failed to decode response from auth service: %w", err)
 	}
 
+	if token.ExpireIn > 0 {
+		token.expiresAt = time.Now().Add(time.Duration(token.ExpireIn) * time.Second)
+	}
+
 	return token, nil
+}
+
+// refresh obtains a new token and atomically swaps it in. It first tries the
+// refresh_token grant and, on failure, falls back to a fresh client_credentials
+// grant. The currently stored token is left untouched until a new one is
+// successfully fetched, so Token() never observes an empty value.
+//
+// old is the token the caller observed before deciding to refresh. If another
+// goroutine already replaced it while this one waited for refreshMu, the refresh
+// is skipped — collapsing a burst of concurrent 401s into a single network call.
+func (t *Authenticator) refresh(ctx context.Context, old *jwtToken) error {
+	t.refreshMu.Lock()
+	defer t.refreshMu.Unlock()
+
+	cur := t.tk.Load()
+	if old != nil && cur != old {
+		return nil
+	}
+
+	tk, err := t.token(ctx, cur)
+	if err != nil {
+		// The refresh token may be expired/revoked; re-authenticate from scratch.
+		tk, err = t.token(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	t.tk.Store(tk)
+
+	return nil
+}
+
+// refreshInterval returns how long to wait before refreshing the current token,
+// scheduling the refresh at ~80% of the token's lifetime so the margin scales
+// with short-lived tokens instead of a fixed offset that could exceed the TTL.
+func (t *Authenticator) refreshInterval() time.Duration {
+	tk := t.tk.Load()
+
+	if tk == nil || tk.ExpireIn <= 0 {
+		return time.Minute
+	}
+
+	d := time.Duration(tk.ExpireIn) * time.Second
+
+	return d - d/5
 }
 
 func getPublicKey(ctx context.Context, host string) (*rsa.PublicKey, error) {
