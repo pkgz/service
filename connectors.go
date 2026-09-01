@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -14,12 +17,27 @@ import (
 )
 
 // NewMongo - initialize mongo-driver client. Also pinging mongo.
-func NewMongo(ctx context.Context, host string) (*mongo.Client, error) {
+// An optional path to a CA certificate (PEM) can be passed to enable TLS.
+func NewMongo(ctx context.Context, host string, caCertPath ...string) (*mongo.Client, error) {
 	if host == "" {
 		host = "mongodb://localhost:27017"
 	}
 
-	client, err := mongo.Connect(options.Client().ApplyURI(host))
+	opts := options.Client().ApplyURI(host)
+
+	if len(caCertPath) != 0 && caCertPath[0] != "" {
+		pem, err := os.ReadFile(caCertPath[0])
+		if err != nil {
+			return nil, fmt.Errorf("read tls certificate: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, errors.New("parse tls certificate")
+		}
+		opts.SetTLSConfig(&tls.Config{RootCAs: pool})
+	}
+
+	client, err := mongo.Connect(opts)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}

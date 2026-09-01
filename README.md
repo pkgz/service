@@ -41,6 +41,9 @@ Each connector dials the backend and verifies connectivity (ping/ready) before r
 
 ```go
 mongo, err := service.NewMongo(ctx, "mongodb://localhost:27017")
+
+// with TLS, passing a path to a CA certificate (PEM):
+mongo, err := service.NewMongo(ctx, "mongodb://localhost:27017", "/path/to/ca.pem")
 redis, err := service.NewRedis(ctx, []string{"localhost:6379"}, "" /* password */)
 influx, err := service.NewInflux(ctx, "http://localhost:8086", token, nil)
 ```
