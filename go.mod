@@ -3,7 +3,7 @@ module github.com/pkgz/service
 go 1.26
 
 require (
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/pkgz/logg v0.4.0
@@ -18,7 +18,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.3.1 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
-	github.com/klauspost/compress v1.17.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/oapi-codegen/runtime v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
